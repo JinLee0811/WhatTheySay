@@ -12,6 +12,7 @@ export interface AnalysisResult {
   mentioned_menu_items: string[];
   recommended_dishes: string[];
   average_rating: number;
+  photoUrls?: string[];
 }
 
 export interface ApiResponse<T> {

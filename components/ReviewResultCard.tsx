@@ -8,6 +8,7 @@ import {
   DocumentTextIcon,
   FireIcon,
   ListBulletIcon,
+  PhotoIcon,
 } from "@heroicons/react/24/outline";
 
 interface ReviewResultCardProps {
@@ -197,6 +198,33 @@ export default function ReviewResultCard({ result }: ReviewResultCardProps) {
               {result.summary}
             </p>
           </div>
+
+          {/* Restaurant Photos */}
+          {result.photoUrls && result.photoUrls.length > 0 && (
+            <div className='p-4 sm:p-5 rounded-lg bg-gray-50 border border-gray-200'>
+              <h3 className='text-lg sm:text-xl font-semibold text-gray-700 mb-3 sm:mb-4 flex items-center'>
+                <PhotoIcon className='w-5 h-5 sm:w-6 sm:h-6 mr-2 text-gray-500' />
+                Restaurant Photos
+              </h3>
+              <div className='flex overflow-x-auto space-x-3 pb-2 -mb-2'>
+                {result.photoUrls.map((url, index) => (
+                  <div
+                    key={`photo-${index}`}
+                    className='flex-shrink-0 w-40 h-32 sm:w-48 sm:h-40 rounded-lg overflow-hidden shadow-md'>
+                    <img
+                      src={url}
+                      alt={`Restaurant photo ${index + 1}`}
+                      className='w-full h-full object-cover'
+                      loading='lazy' // Lazy load images
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className='text-xs text-gray-500 mt-3 text-center'>
+                Scroll horizontally to view more photos
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -19,6 +19,7 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedRestaurant, setSelectedRestaurant] = useState<{
+    placeId: string;
     name: string;
     url: string;
   } | null>(null);
@@ -26,14 +27,17 @@ export default function Home() {
   const topRef = useRef<HTMLDivElement>(null);
 
   const handleRestaurantSelect = (placeId: string, name: string, url: string) => {
-    setSelectedRestaurant({ name, url });
-    handleSubmit(url);
+    setSelectedRestaurant({ placeId, name, url });
+    handleSubmit(url, placeId);
   };
 
-  const handleSubmit = async (url: string) => {
+  const handleSubmit = async (url: string, placeId?: string) => {
     setIsLoading(true);
     setResult(null);
     setError(null);
+    if (!placeId) {
+      setSelectedRestaurant(null);
+    }
 
     try {
       // 1. Crawl Reviews
@@ -54,10 +58,15 @@ export default function Home() {
       }
 
       // 2. Analyze Reviews
+      const analyzePayload: { reviews: any[]; placeId?: string } = { reviews: crawlData.data };
+      if (placeId) {
+        analyzePayload.placeId = placeId;
+      }
+
       const analyzeResponse = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviews: crawlData.data }),
+        body: JSON.stringify(analyzePayload),
       });
 
       const analyzeData = await analyzeResponse.json();
