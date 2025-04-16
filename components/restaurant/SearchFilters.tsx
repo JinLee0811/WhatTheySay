@@ -1,61 +1,83 @@
-import { FilterOptions } from "@/types/restaurant";
+import React from "react";
+import { StarIcon, MapPinIcon, CurrencyDollarIcon } from "@heroicons/react/24/outline";
+import { SearchFilters } from "../../types/restaurant";
 
 interface SearchFiltersProps {
-  filters: FilterOptions;
-  onFilterChange: (filterName: keyof FilterOptions, value: number | string) => void;
+  filters: SearchFilters;
+  onFilterChange: (newFilters: SearchFilters) => void;
 }
 
-export default function SearchFilters({ filters, onFilterChange }: SearchFiltersProps) {
+const ratingOptions = [4.5, 4.0, 3.5, 3.0];
+const distanceOptions = [1, 3, 5, 10, 20]; // in km
+const priceOptions = [
+  { value: "all", label: "Any Price" },
+  { value: "1", label: "$" },
+  { value: "2", label: "$$" },
+  { value: "3", label: "$$$" },
+  { value: "4", label: "$$$$" },
+];
+
+export default function SearchFiltersComponent({ filters, onFilterChange }: SearchFiltersProps) {
+  const handleFilterChange = (key: keyof SearchFilters, value: number | string) => {
+    onFilterChange({ ...filters, [key]: value });
+  };
+
   return (
-    <div className='flex flex-wrap gap-4 p-4 bg-white rounded-lg shadow-sm'>
-      <div className='flex flex-col'>
-        <label htmlFor='rating' className='text-sm font-medium text-gray-700'>
-          최소 평점
+    <div className='flex flex-wrap items-center gap-4 p-4 bg-gray-50 rounded-lg'>
+      {/* Rating Filter */}
+      <div className='flex items-center gap-2'>
+        <StarIcon className='w-5 h-5 text-gray-500' />
+        <label htmlFor='rating-filter' className='text-sm font-medium text-gray-700'>
+          Min Rating:
         </label>
         <select
-          id='rating'
+          id='rating-filter'
           value={filters.rating}
-          onChange={(e) => onFilterChange("rating", Number(e.target.value))}
-          className='mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500'>
-          <option value='0'>전체</option>
-          {[1, 2, 3, 4, 5].map((rating) => (
-            <option key={rating} value={rating}>
-              {rating}점 이상
+          onChange={(e) => handleFilterChange("rating", parseFloat(e.target.value))}
+          className='p-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500'>
+          {ratingOptions.map((r) => (
+            <option key={r} value={r}>
+              {r.toFixed(1)}+
             </option>
           ))}
         </select>
       </div>
 
-      <div className='flex flex-col'>
-        <label htmlFor='distance' className='text-sm font-medium text-gray-700'>
-          거리
+      {/* Distance Filter */}
+      <div className='flex items-center gap-2'>
+        <MapPinIcon className='w-5 h-5 text-gray-500' />
+        <label htmlFor='distance-filter' className='text-sm font-medium text-gray-700'>
+          Max Distance:
         </label>
         <select
-          id='distance'
+          id='distance-filter'
           value={filters.distance}
-          onChange={(e) => onFilterChange("distance", Number(e.target.value))}
-          className='mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500'>
-          <option value='500'>500m</option>
-          <option value='1000'>1km</option>
-          <option value='2000'>2km</option>
-          <option value='5000'>5km</option>
+          onChange={(e) => handleFilterChange("distance", parseInt(e.target.value))}
+          className='p-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500'>
+          {distanceOptions.map((d) => (
+            <option key={d} value={d}>
+              {d} km
+            </option>
+          ))}
         </select>
       </div>
 
-      <div className='flex flex-col'>
-        <label htmlFor='price' className='text-sm font-medium text-gray-700'>
-          가격대
+      {/* Price Level Filter */}
+      <div className='flex items-center gap-2'>
+        <CurrencyDollarIcon className='w-5 h-5 text-gray-500' />
+        <label htmlFor='price-filter' className='text-sm font-medium text-gray-700'>
+          Price:
         </label>
         <select
-          id='price'
+          id='price-filter'
           value={filters.priceLevel}
-          onChange={(e) => onFilterChange("priceLevel", Number(e.target.value))}
-          className='mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500'>
-          <option value='0'>전체</option>
-          <option value='1'>₩</option>
-          <option value='2'>₩₩</option>
-          <option value='3'>₩₩₩</option>
-          <option value='4'>₩₩₩₩</option>
+          onChange={(e) => handleFilterChange("priceLevel", e.target.value)}
+          className='p-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500'>
+          {priceOptions.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
         </select>
       </div>
     </div>

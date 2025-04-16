@@ -4,7 +4,7 @@ import { MapPinIcon, ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/
 import { Restaurant } from "@/types/restaurant";
 
 interface RestaurantListProps {
-  restaurants: (Restaurant & { isOpenNow?: boolean })[];
+  restaurants: Restaurant[];
   onRestaurantSelect: (placeId: string, name: string, url: string) => void;
 }
 
