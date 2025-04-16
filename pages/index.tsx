@@ -1,39 +1,31 @@
 import React, { useState, useRef, useEffect } from "react";
 import Head from "next/head";
-import { StarIcon } from "@heroicons/react/24/solid";
 import {
+  StarIcon,
   MapPinIcon,
-  ClipboardDocumentIcon,
-  BoltIcon,
-  DocumentTextIcon,
+  SparklesIcon,
+  MagnifyingGlassIcon,
   InformationCircleIcon,
   ArrowUpCircleIcon,
-  MagnifyingGlassIcon,
   PaperAirplaneIcon,
   ChartBarIcon,
 } from "@heroicons/react/24/outline";
-import ReviewInput from "../components/ReviewInput";
 import ReviewResultCard from "../components/ReviewResultCard";
 import { AnalysisResult } from "../types";
-import { Autocomplete } from "@react-google-maps/api";
+import { Autocomplete, useLoadScript } from "@react-google-maps/api";
 import RestaurantList from "../components/restaurant/RestaurantList";
-import FilterBar from "../components/common/FilterBar";
-import { createClient } from "@supabase/supabase-js";
 import RestaurantSearch from "../components/RestaurantSearch";
-import { useGoogleMaps } from "@/hooks/useGoogleMaps";
 import { Restaurant } from "@/types/restaurant";
+import { supabase } from "../lib/supabaseClient";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const libraries: ("places" | "geometry")[] = ["places", "geometry"];
 
-interface HomeContentProps {
-  isLoaded: boolean;
-  loadError: Error | undefined;
-}
+function HomeContent() {
+  const { isLoaded, loadError } = useLoadScript({
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
+    libraries,
+  });
 
-function HomeContent({ isLoaded, loadError }: HomeContentProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -43,7 +35,6 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
     name: string;
     url: string;
   } | null>(null);
-  const [showInstructions, setShowInstructions] = useState(true);
   const topRef = useRef<HTMLDivElement>(null);
   const reviewResultRef = useRef<HTMLDivElement>(null);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -55,6 +46,7 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
   const locationInputRef = useRef<HTMLInputElement>(null);
   const [autocompleteInstance, setAutocompleteInstance] =
     useState<google.maps.places.Autocomplete | null>(null);
+  const [directUrlInput, setDirectUrlInput] = useState("");
 
   const findNearby = () => {
     setError(null);
@@ -74,7 +66,15 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
         },
         (geoError) => {
           console.error("Geolocation error:", geoError);
-          setError("위치 정보를 가져올 수 없습니다. 위치 서비스가 활성화되어 있는지 확인해주세요.");
+          let message = "Could not get your location. Please ensure location services are enabled.";
+          if (geoError.code === geoError.PERMISSION_DENIED) {
+            message = "Location permission denied. Please enable it in your browser settings.";
+          } else if (geoError.code === geoError.POSITION_UNAVAILABLE) {
+            message = "Location information is unavailable.";
+          } else if (geoError.code === geoError.TIMEOUT) {
+            message = "Getting location timed out. Please try again.";
+          }
+          setError(message);
           setIsSearching(false);
           setHasSearched(false);
         },
@@ -85,7 +85,7 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
         }
       );
     } else {
-      setError("이 브라우저에서는 위치 서비스를 지원하지 않습니다.");
+      setError("Geolocation is not supported by this browser.");
       setIsSearching(false);
       setHasSearched(false);
     }
@@ -104,10 +104,13 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
 
     try {
       const geocoder = new google.maps.Geocoder();
-      const addressToGeocode = locationText.toLowerCase().includes("sydney")
+      const addressToGeocode = locationText.toLowerCase().includes("australia")
         ? locationText
-        : `${locationText}, Sydney, Australia`;
-      const response = await geocoder.geocode({ address: addressToGeocode });
+        : `${locationText}, Australia`;
+      const response = await geocoder.geocode({
+        address: addressToGeocode,
+        language: "en",
+      });
 
       if (response.results.length > 0) {
         const coords = {
@@ -130,11 +133,17 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
 
   const fetchRestaurants = (coords: { lat: number; lng: number }) => {
     try {
+      if (!isLoaded) {
+        setError("Map service not ready, please wait a moment.");
+        setIsSearching(false);
+        return;
+      }
       const service = new google.maps.places.PlacesService(document.createElement("div"));
       const request: google.maps.places.PlaceSearchRequest = {
         location: new google.maps.LatLng(coords.lat, coords.lng),
         type: "restaurant",
         rankBy: google.maps.places.RankBy.DISTANCE,
+        language: "en",
       };
 
       console.log("Search request:", request);
@@ -144,8 +153,8 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
 
         if (status === google.maps.places.PlacesServiceStatus.OK && results) {
           const filteredResults = results
-            .filter((place) => place.rating && place.rating >= 4.0)
-            .map((place) => {
+            .filter((place) => place.rating && place.rating >= 4.0 && place.place_id)
+            .map((place): Restaurant => {
               let distance = 0;
               try {
                 if (place.geometry?.location && google.maps.geometry?.spherical) {
@@ -161,58 +170,56 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
               const isOpenNow = place.opening_hours?.open_now;
 
               return {
-                id: place.place_id || "",
+                id: place.place_id!,
                 name: place.name || "",
                 rating: place.rating || 0,
+                reviewCount: place.user_ratings_total || 0,
                 priceLevel: (place.price_level || 0).toString(),
-                imageUrl: place.photos ? place.photos[0].getUrl({ maxWidth: 400 }) : "",
+                imageUrl: place.photos
+                  ? place.photos[0].getUrl({ maxWidth: 400 })
+                  : "/placeholder-restaurant.jpg",
                 location: {
                   lat: place.geometry?.location?.lat() || 0,
                   lng: place.geometry?.location?.lng() || 0,
                 },
                 address: place.vicinity || "",
                 categories: place.types || [],
-                reviewCount: place.user_ratings_total || 0,
                 distance,
                 isOpenNow: isOpenNow,
               };
             })
             .sort((a, b) => {
-              if (Math.abs(b.rating - a.rating) < 0.1) {
-                return a.distance - b.distance;
+              if (Math.abs(b.rating - a.rating) >= 0.1) {
+                return b.rating - a.rating;
               }
-              return b.rating - a.rating;
+              return a.distance - b.distance;
             })
             .slice(0, 20);
 
           setRestaurants(filteredResults);
           if (filteredResults.length === 0) {
-            setError("주변에 별점 4.0 이상의 맛집이 없습니다. 다른 위치에서 시도해보세요.");
+            setError("No restaurants found nearby with 4.0+ rating. Try a different location?");
+          } else {
+            setError(null);
           }
         } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
           setRestaurants([]);
-          setError("주변에서 음식점을 찾을 수 없습니다. 다른 위치에서 시도해보세요.");
+          setError("No restaurants found nearby. Try searching a different location.");
         } else {
-          setError("음식점 검색 중 오류가 발생했습니다. 다시 시도해주세요.");
+          setError("Error searching restaurants. Please try again later.");
+          console.error("Places API error:", status);
         }
         setIsSearching(false);
       });
     } catch (error) {
       console.error("Error fetching restaurants:", error);
-      setError("음식점 검색 중 오류가 발생했습니다. 다시 시도해주세요.");
+      setError("An unexpected error occurred while searching. Please try again.");
       setIsSearching(false);
     }
   };
 
   const handleFilterChange = (newFilters: any) => {
-    if (hasSearched && searchQuery) {
-      setIsSearching(true);
-      if (typeof searchQuery === "string") {
-        searchByLocationText(searchQuery);
-      } else {
-        fetchRestaurants(searchQuery);
-      }
-    }
+    console.log("Filters changed:", newFilters);
   };
 
   const handleRestaurantSelect = (placeId: string, name: string, url: string) => {
@@ -230,6 +237,13 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
       setHasSearched(false);
       setSearchLocationInput("");
       setSearchQuery(null);
+      setDirectUrlInput(url);
+    }
+
+    if (!url || !url.startsWith("https://")) {
+      setError("Please enter a valid Google Maps URL starting with https://");
+      setIsLoading(false);
+      return;
     }
 
     try {
@@ -269,7 +283,8 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
       }, 300);
     } catch (err) {
       console.error("Submission error:", err);
-      setError(err instanceof Error ? err.message : "An unknown error occurred.");
+      setError(err instanceof Error ? err.message : "An unknown error occurred during analysis.");
+      setResult(null);
     } finally {
       setIsLoading(false);
     }
@@ -281,6 +296,7 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
     setSelectedRestaurant(null);
     setRestaurants([]);
     setSearchLocationInput("");
+    setDirectUrlInput("");
     setSearchQuery(null);
     setHasSearched(false);
     topRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -297,67 +313,66 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
       if (locationName) {
         setSearchLocationInput(locationName);
         searchByLocationText(locationName);
+      } else {
+        setError("Could not get location details from selected place.");
       }
     }
   };
 
+  if (loadError) {
+    return (
+      <div className='text-center py-12 text-red-600'>Error loading maps: {loadError.message}</div>
+    );
+  }
+  if (!isLoaded) {
+    return <div className='text-center py-12'>Loading map services...</div>;
+  }
+
   return (
-    <div className='min-h-screen bg-gray-50'>
+    <>
       <Head>
-        <title>Before You Go - Restaurant Review Analysis</title>
+        <title>Before You Go | AI Restaurant Insights for Travelers</title>
         <meta
           name='description'
-          content='Discover the best restaurants with AI-powered review analysis before you go'
+          content='Find the best local restaurants anywhere. AI analyzes reviews, so you dine like a local, not a tourist. Perfect for your next trip!'
         />
       </Head>
 
       {isLoading && selectedRestaurant && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50'>
-          <div className='bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl'>
-            <div className='flex flex-col items-center'>
-              <div className='mb-4'>
-                <ChartBarIcon className='w-12 h-12 text-blue-600 animate-bounce' />
-              </div>
-              <h3 className='text-xl font-semibold mb-2'>Analyzing Reviews</h3>
-              <p className='text-gray-600 text-center mb-4'>
-                We're analyzing reviews for {selectedRestaurant.name}. This might take a few
-                seconds...
-              </p>
-              <div className='w-full bg-gray-200 rounded-full h-2 mb-4'>
-                <div className='bg-blue-600 h-2 rounded-full animate-[loading_1s_ease-in-out_infinite]'></div>
-              </div>
-              <p className='text-sm text-gray-500'>Our AI is reading and summarizing all reviews</p>
-            </div>
+        <div className='fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50'>
+          <div className='bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl text-center'>
+            <ChartBarIcon className='w-12 h-12 text-blue-600 mx-auto mb-4 animate-pulse' />
+            <h3 className='text-xl font-semibold mb-2'>Analyzing Reviews</h3>
+            <p className='text-gray-600 mb-4'>
+              Our AI is reading reviews for{" "}
+              <span className='font-medium'>{selectedRestaurant.name}</span>...
+            </p>
+            <div className='w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto'></div>
           </div>
         </div>
       )}
 
-      <style jsx>{`
-        @keyframes loading {
-          0% {
-            width: 0%;
-          }
-          50% {
-            width: 100%;
-          }
-          100% {
-            width: 0%;
-          }
-        }
-      `}</style>
+      <div ref={topRef}>
+        <div className='text-center mb-12 md:mb-16'>
+          <h1 className='text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 leading-tight'>
+            Dine Smarter, Not Harder
+          </h1>
+          <p className='text-lg md:text-xl text-gray-600 max-w-3xl mx-auto mb-8'>
+            Stop scrolling endless reviews! <strong className='text-blue-600'>Before You Go</strong>{" "}
+            uses AI to instantly summarize what locals *really* think, helping you find authentic
+            dining experiences anywhere in Australia.
+          </p>
+        </div>
 
-      <main className='container mx-auto px-4 py-8'>
-        {/* Find Near Me and Location Search Section */}
-        <div className='flex flex-col items-center gap-4 mb-8'>
-          <div className='flex gap-4 w-full max-w-xl'>
+        <div className='bg-white rounded-xl shadow-lg p-6 md:p-8 mb-12 max-w-3xl mx-auto'>
+          <div className='flex flex-col sm:flex-row gap-4 mb-4'>
             <button
               onClick={findNearby}
               disabled={isSearching}
-              className='flex-1 flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'>
+              className='flex-1 flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm whitespace-nowrap'>
               <MapPinIcon className='w-5 h-5 mr-2' />
-              {isSearching ? "Searching..." : "Find Near Me"}
+              {isSearching ? "Searching Near You..." : "Find Restaurants Near Me"}
             </button>
-
             <div className='flex-1 relative'>
               <Autocomplete
                 onLoad={onAutocompleteLoad}
@@ -369,142 +384,116 @@ function HomeContent({ isLoaded, loadError }: HomeContentProps) {
                 <input
                   ref={locationInputRef}
                   type='text'
-                  className='w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500'
-                  placeholder='Or enter location'
+                  className='w-full pl-4 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm'
+                  placeholder='Or enter a suburb or city'
                   value={searchLocationInput}
                   onChange={(e) => setSearchLocationInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") searchByLocationText(searchLocationInput);
+                  }}
                   disabled={isSearching}
                 />
               </Autocomplete>
               <button
                 onClick={() => searchByLocationText(searchLocationInput)}
                 disabled={isSearching || !searchLocationInput.trim()}
-                className='absolute right-2 top-1/2 transform -translate-y-1/2 p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed'>
+                className='absolute right-2 top-1/2 transform -translate-y-1/2 p-2 text-gray-400 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500'
+                aria-label='Search location'>
                 <MagnifyingGlassIcon className='w-5 h-5' />
               </button>
             </div>
           </div>
+          {isSearching && !error && (
+            <p className='text-sm text-center text-gray-600 pt-2'>
+              Searching for top-rated restaurants...
+            </p>
+          )}
+          {error && (
+            <div className='mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center justify-center gap-2'>
+              <InformationCircleIcon className='w-5 h-5' />
+              <span>{error}</span>
+            </div>
+          )}
         </div>
 
-        {error && (
-          <div className='max-w-2xl mx-auto mb-8 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700'>
-            <p className='flex items-center'>
-              <InformationCircleIcon className='w-5 h-5 mr-2' />
-              {error}
-            </p>
-          </div>
-        )}
-
-        {hasSearched && restaurants.length > 0 && (
-          <div className='mb-8'>
-            <div className='flex items-center justify-between mb-6'>
-              <h2 className='text-2xl font-semibold text-gray-900'>Top Restaurants Near You</h2>
-              <p className='text-gray-600'>Showing {restaurants.length} results</p>
+        {hasSearched && !isSearching && restaurants.length > 0 && (
+          <div className='mb-12'>
+            <div className='flex flex-col sm:flex-row items-center justify-between mb-6 gap-4'>
+              <h2 className='text-2xl font-semibold text-gray-900'>Top Restaurants Found</h2>
+              <p className='text-gray-600 text-sm'>
+                Showing {restaurants.length} results (Rating 4.0+)
+              </p>
             </div>
             <RestaurantList restaurants={restaurants} onRestaurantSelect={handleRestaurantSelect} />
           </div>
         )}
 
-        {!result && !isLoading && !isSearching && (
-          <div className='bg-white rounded-lg shadow-lg p-6 mb-8'>
-            <h2 className='text-2xl font-bold mb-4'>Search Restaurant Directly</h2>
-            <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
-              <div className='flex flex-col items-center justify-center p-4 border border-gray-200 rounded-lg'>
-                <h3 className='text-xl font-semibold mb-3 text-center'>Enter Google Maps URL</h3>
-                <div className='w-full'>
+        {!result && !isLoading && (
+          <div className='bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 rounded-xl shadow-lg p-6 md:p-8 mb-12 text-center'>
+            <SparklesIcon className='w-10 h-10 text-indigo-600 mx-auto mb-4' />
+            <h2 className='text-2xl font-bold text-gray-900 mb-3'>Already Know the Restaurant?</h2>
+            <p className='text-gray-600 mb-6 max-w-xl mx-auto'>
+              Get instant AI insights by searching its name or pasting its Google Maps URL.
+            </p>
+            <div className='max-w-lg mx-auto'>
+              <div className='mb-4'>
+                <RestaurantSearch
+                  onRestaurantSelect={(placeId, name, url) => handleSubmit(url, placeId)}
+                />
+              </div>
+              <details className='text-sm'>
+                <summary className='cursor-pointer text-indigo-600 hover:underline'>
+                  Or paste Google Maps URL
+                </summary>
+                <div className='mt-3 flex gap-2'>
                   <input
-                    type='text'
-                    className='w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500'
-                    placeholder='Paste Google Maps URL'
+                    type='url'
+                    className='flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm'
+                    placeholder='https://maps.app.goo.gl/...'
+                    value={directUrlInput}
+                    onChange={(e) => setDirectUrlInput(e.target.value)}
+                    disabled={isLoading}
                   />
-                  <button className='w-full mt-2 flex items-center justify-center px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500'>
-                    <PaperAirplaneIcon className='h-5 w-5 mr-2' />
-                    Analyze Reviews
+                  <button
+                    onClick={() => handleSubmit(directUrlInput)}
+                    disabled={isLoading || !directUrlInput.trim()}
+                    className='px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 text-sm whitespace-nowrap'>
+                    Analyze URL
                   </button>
-                  <a
-                    href='https://www.google.com/maps'
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    className='mt-3 text-sm text-indigo-600 hover:text-indigo-800 flex items-center justify-center'>
-                    <MagnifyingGlassIcon className='h-4 w-4 mr-1' />
-                    Find restaurant on Google Maps
-                  </a>
                 </div>
-              </div>
-
-              <div className='flex flex-col items-center justify-center p-4 border border-gray-200 rounded-lg'>
-                <h3 className='text-xl font-semibold mb-3 text-center'>Search Restaurant Name</h3>
-                <div className='w-full'>
-                  <p className='text-gray-600 mb-4 text-center text-sm'>
-                    Enter the name of the restaurant you want to analyze
-                  </p>
-                  <div className='max-w-md mx-auto'>
-                    <RestaurantSearch
-                      onRestaurantSelect={(placeId, name, url) => handleSubmit(url, placeId)}
-                    />
-                  </div>
-                </div>
-              </div>
+              </details>
             </div>
           </div>
         )}
 
-        {isLoading ? (
-          <div className='text-center py-12'>
-            <div className='inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500'></div>
-            <p className='mt-4 text-gray-600'>Analyzing reviews...</p>
-          </div>
-        ) : (
-          result && (
-            <div className='mt-12' ref={reviewResultRef}>
-              {selectedRestaurant && (
-                <h2 className='text-2xl font-bold mb-4 text-center'>
-                  Analysis for: {selectedRestaurant.name}
-                </h2>
-              )}
-              {!selectedRestaurant && (
-                <h2 className='text-2xl font-bold mb-4 text-center'>Analysis Result</h2>
-              )}
-              <ReviewResultCard
-                result={result}
-                onWishlistClick={() => {}}
-                onReviewClick={() => {}}
-              />
-              <div className='mt-8 text-center'>
-                <button
-                  onClick={handleNewSearch}
-                  className='inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors'>
-                  <ArrowUpCircleIcon className='-ml-1 mr-3 h-5 w-5' aria-hidden='true' />
-                  Start New Search or Location
-                </button>
-              </div>
+        {result && !isLoading && (
+          <div className='mt-12 md:mt-16' ref={reviewResultRef}>
+            {selectedRestaurant && (
+              <h2 className='text-3xl font-bold mb-6 text-center'>
+                AI Analysis: <span className='text-blue-600'>{selectedRestaurant.name}</span>
+              </h2>
+            )}
+            {!selectedRestaurant && directUrlInput && (
+              <h2 className='text-3xl font-bold mb-6 text-center'>
+                AI Analysis: <span className='text-blue-600'>Entered URL</span>
+              </h2>
+            )}
+            <ReviewResultCard result={result} onWishlistClick={() => {}} onReviewClick={() => {}} />
+            <div className='mt-10 text-center'>
+              <button
+                onClick={handleNewSearch}
+                className='inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors'>
+                <ArrowUpCircleIcon className='-ml-1 mr-3 h-5 w-5' aria-hidden='true' />
+                Search Another Location or Restaurant
+              </button>
             </div>
-          )
+          </div>
         )}
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
 
 export default function Home() {
-  const { isLoaded, loadError } = useGoogleMaps();
-
-  if (loadError) {
-    return (
-      <div className='text-center py-12'>
-        <p className='text-red-600'>Error loading Google Maps: {loadError.message}</p>
-      </div>
-    );
-  }
-
-  if (!isLoaded) {
-    return (
-      <div className='text-center py-12'>
-        <div className='inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500'></div>
-        <p className='mt-4 text-gray-600'>Loading Map Interface...</p>
-      </div>
-    );
-  }
-
-  return <HomeContent isLoaded={isLoaded} loadError={loadError} />;
+  return <HomeContent />;
 }

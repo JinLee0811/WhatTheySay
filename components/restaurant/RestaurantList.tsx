@@ -109,11 +109,6 @@ export default function RestaurantList({ restaurants, onRestaurantSelect }: Rest
               <p className='text-sm text-gray-500 line-clamp-2'>{restaurant.address}</p>
               <div className='mt-3 flex items-center justify-between'>
                 <span className='text-sm text-gray-600'>{restaurant.reviewCount} reviews</span>
-                {restaurant.priceLevel && (
-                  <span className='text-sm font-medium text-gray-700'>
-                    {"$".repeat(parseInt(restaurant.priceLevel))}
-                  </span>
-                )}
               </div>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import React from "react";
 import Head from "next/head";
-import Header from "./Header";
+// import Header from "./Header"; // Remove this import
 import Footer from "./Footer";
 import Navbar from "./Navbar";
 
@@ -10,22 +10,16 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   return (
-    <div className='flex flex-col min-h-screen bg-gray-50'>
+    <div className='flex flex-col min-h-screen bg-gradient-to-b from-blue-50 to-white'>
       <Head>
-        <title>Before You Go - Sydney Restaurant Review Analysis</title>
-        <meta
-          name='description'
-          content='Discover top Sydney restaurants with AI-powered review summaries. Search near you or by location.'
-        />
+        <title>Before You Go</title>
+        <meta name='description' content='AI-powered restaurant review analysis for travelers.' />
         <link rel='icon' href='/favicon.ico' />
       </Head>
 
       <Navbar />
 
-      <main className='flex-grow'>
-        <Header />
-        <div className='container mx-auto px-4 py-8'>{children}</div>
-      </main>
+      <main className='flex-grow container mx-auto px-4 py-12 md:py-16'>{children}</main>
 
       <Footer />
     </div>
