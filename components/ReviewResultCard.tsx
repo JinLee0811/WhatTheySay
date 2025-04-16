@@ -9,10 +9,14 @@ import {
   FireIcon,
   ListBulletIcon,
   PhotoIcon,
+  HeartIcon,
+  PencilSquareIcon,
 } from "@heroicons/react/24/outline";
 
 interface ReviewResultCardProps {
   result: AnalysisResult;
+  onWishlistClick: () => void;
+  onReviewClick: () => void;
 }
 
 // Helper function to generate star icons based on rating
@@ -36,7 +40,11 @@ const renderStars = (rating: number) => {
   );
 };
 
-export default function ReviewResultCard({ result }: ReviewResultCardProps) {
+export default function ReviewResultCard({
+  result,
+  onWishlistClick,
+  onReviewClick,
+}: ReviewResultCardProps) {
   const getSentimentClasses = (sentiment: string) => {
     switch (sentiment?.toLowerCase()) {
       case "positive":
@@ -225,6 +233,22 @@ export default function ReviewResultCard({ result }: ReviewResultCardProps) {
               </p>
             </div>
           )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className='mt-8 flex flex-col sm:flex-row gap-4 justify-center'>
+          <button
+            onClick={onWishlistClick}
+            className='flex-1 sm:flex-initial sm:min-w-[200px] flex items-center justify-center gap-2 px-6 py-3 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors font-medium'>
+            <HeartIcon className='w-5 h-5' />
+            Add to Wishlist
+          </button>
+          <button
+            onClick={onReviewClick}
+            className='flex-1 sm:flex-initial sm:min-w-[200px] flex items-center justify-center gap-2 px-6 py-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors font-medium'>
+            <PencilSquareIcon className='w-5 h-5' />
+            Write Review
+          </button>
         </div>
       </div>
     </div>
